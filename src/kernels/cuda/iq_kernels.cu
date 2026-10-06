@@ -37,21 +37,6 @@ __device__ __forceinline__ int get_int_b2(const void* x, const int& i32) {
     return x32;
 }
 __device__ __forceinline__ int get_int_b4(const void* x, const int& i32) { return ((const int*) x)[i32]; }
-// Чтение 4 байт как int32 с побайтовым сдвигом (безопасно для невыровненной памяти 17-байтного блока)
-// offset - индекс в 4-байтных единицах (как у get_int_b2/get_int_b4), т.е. читаются байты 4*offset .. 4*offset+3
-__device__ __forceinline__ int get_int_b1(const void* x, const int& offset) {
-    const uint8_t* x8 = (const uint8_t*) x;
-    return (int)x8[4*offset + 0] | ((int)x8[4*offset + 1] << 8) |
-           ((int)x8[4*offset + 2] << 16) | ((int)x8[4*offset + 3] << 24);
-}
-
-// Конвертация E8M0 в float, деленная на 2 (так как kvalues_mxfp4 удвоены)
-__device__ __forceinline__ float e8m0_half(uint8_t x) {
-    uint32_t bits;
-    if (x < 2) { bits = 0x00200000u << x; }          // 2^-128, 2^-127
-    else       { bits = (uint32_t)(x - 1) << 23; }   // 2^(x-128)
-    return __int_as_float(bits);
-}
 __device__ __forceinline__ uint32_t unpack_ksigns(const uint8_t v) {
     const uint32_t p = __popc(v) & 1;
     const uint32_t s = v ^ p << 7;
@@ -299,22 +284,6 @@ __device__ __forceinline__ float vec_dot_iq4_nl_q8_1(const void* __restrict__ vb
     }
     const float d = __half2float(bq4->d) * __low2float(bq8_1->ds);
     return d * sumi;
-}
-
-#define VDR_MXFP4_Q8_1_MMVQ 2
-
-static __device__ __forceinline__ float vec_dot_mxfp4_q8_1(
-        const void* vbq, const block_q8_1* bq8_1, const int& kbx, const int& iqs) {
-    const block_mxfp4* bq4 = (const block_mxfp4*) vbq + kbx;
-    const int* q8 = (const int*) bq8_1->qs + iqs;
-    int sumi = 0;
-#pragma unroll
-    for (int l = 0; l < VDR_MXFP4_Q8_1_MMVQ; ++l) {
-        const int2 v = get_int_from_table_16(get_int_b1(bq4->qs, iqs + l), kvalues_mxfp4);
-        sumi = ggml_cuda_dp4a(v.x, q8[l + 0], sumi);
-        sumi = ggml_cuda_dp4a(v.y, q8[l + 4], sumi);
-    }
-    return e8m0_half(bq4->e) * __low2float(bq8_1->ds) * sumi;
 }
 
 // IQ4_XS: 256 values as 8 sub-blocks of 32 (6-bit scale each); one call covers one sub-block (iqs = 4 * sub-block),
@@ -635,12 +604,6 @@ template<> struct Fmt<6> { static constexpr int qk = 32, ipb = QI5_0 / VDR_Q5_0,
     __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) { return vec_dot_q5_0_q8_1(v, y, kbx, iqs); } };
 template<> struct Fmt<8> { static constexpr int qk = 32, ipb = QI8_0 / VDR_Q8_0, step = VDR_Q8_0;
     __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) { return vec_dot_q8_0_q8_1(v, y, kbx, iqs); } };
-template<> struct Fmt<39> {
-    static constexpr int qk = 32, ipb = 2, step = 2;
-    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) {
-        return vec_dot_mxfp4_q8_1(v, y, kbx, iqs);
-    }
-};
 
 // The formats of each role, one list each so a type cannot be in one switch and missing from another.  Every
 // entry is a kernel template for each CUDA architecture of the build, hence two lists rather than one.
@@ -965,29 +928,6 @@ template<> struct Split<23> {   // IQ4_XS
         sumi *= r.ls - 32;
         const float d = r.dw * __low2float(bq8_1[iqs / 4].ds);
         return d * sumi;
-    }
-};
-template<> inline constexpr bool kSplit<39> = true;
-template<> struct Split<39> {   // MXFP4
-    struct W { int2 v[2]; float dw; };
-    template<bool STAGE_GRID = false>
-    __device__ static W load(const void* vbq, int kbx, int iqs, const uint32_t* __restrict__ = nullptr) {
-        const block_mxfp4* bq4 = (const block_mxfp4*) vbq + kbx;
-        W r;
-#pragma unroll
-        for (int l = 0; l < 2; ++l) r.v[l] = get_int_from_table_16(get_int_b1(bq4->qs, iqs + l), kvalues_mxfp4);
-        r.dw = e8m0_half(bq4->e);
-        return r;
-    }
-    __device__ static float apply(const W& r, const block_q8_1* bq8_1, int iqs) {
-        const int* q8 = (const int*) bq8_1->qs + iqs;
-        int sumi = 0;
-#pragma unroll
-        for (int l = 0; l < 2; ++l) {
-            sumi = ggml_cuda_dp4a(r.v[l].x, q8[l + 0], sumi);
-            sumi = ggml_cuda_dp4a(r.v[l].y, q8[l + 4], sumi);
-        }
-        return r.dw * __low2float(bq8_1->ds) * sumi;
     }
 };
 template<> inline constexpr bool kSplit<42> = true;
@@ -1629,6 +1569,11 @@ template<typename dst_t> __device__ __forceinline__ dst_t cvt(float v);
 template<> __device__ __forceinline__ float cvt<float>(float v) { return v; }
 template<> __device__ __forceinline__ __half cvt<__half>(float v) { return __float2half(v); }
 
+// MXFP4 (type 39) is not an i-quant, so its device code lives in its own header.  It is included here - after
+// cvt, the last thing those definitions need, and before the first switch that instantiates Fmt<39> or
+// Split<39> - and inside this namespace, because Fmt and Split are declared above.
+#include "mxfp4_kernels.cuh"
+
 template<typename dst_t>
 __device__ void dq_iq2_xxs(const void* vx, int64_t ibs, dst_t* yy, int tid) {
     const block_iq2_xxs* x = (const block_iq2_xxs*) vx;
@@ -1723,21 +1668,6 @@ __device__ void dq_iq4_nl(const void* vx, int64_t ibs, dst_t* yy, int tid) {
     for (int j = 0; j < 4; ++j) {
         y[j + 0] = cvt<dst_t>(d * kvalues_iq4nl[q4[j] & 0xf]);
         y[j + 16] = cvt<dst_t>(d * kvalues_iq4nl[q4[j] >> 4]);
-    }
-}
-template<typename dst_t>
-__device__ void dq_mxfp4(const void* vx, int64_t ibs, dst_t* yy, int tid) {
-    // ibs - индекс суперблока. В Strata суперблок = 256 элементов = 8 блоков MXFP4 (256 / 32)
-    const block_mxfp4* x = (const block_mxfp4*) vx + ibs * (256 / QK_MXFP4);
-    const int il = tid / 8; // 0..3
-    const int ib = tid % 8; // 0..7
-    dst_t* y = yy + 32 * ib + 4 * il;
-    const uint8_t* q4 = x[ib].qs + 4 * il;
-    const float d = e8m0_half(x[ib].e);
-
-    for (int j = 0; j < 4; ++j) {
-        y[j + 0]  = cvt<dst_t>(d * kvalues_mxfp4[q4[j] & 0xf]);
-        y[j + 16] = cvt<dst_t>(d * kvalues_mxfp4[q4[j] >> 4]);
     }
 }
 // Q3_K (the Q2_0 file's token_embd): llama.cpp's dequantize_block_q3_K, its 64 threads folded onto 32
