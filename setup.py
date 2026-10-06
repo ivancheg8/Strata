@@ -233,7 +233,7 @@ FAMILIES = {
     "atomic": {"title": "AtomicChat IQ4_XS", "by": "Custom 3.84bpw",
                "about": "requires --compat-bf16 packing",
                 "hf": hf("AtomicChat/Qwen3.8-Flash-Next-GGUF") + "Qwen3.8-Flash-Next-AD-3.84bpw-IQ4_XS-M64/",
-                "file": "Qwen3.8-Flash-Next-AD-3.84bpw-IQ4_XS-M64-0000{i}-of-00028.gguf", "shards": 28,
+                "file": "Qwen3.8-Flash-Next-AD-3.84bpw-IQ4_XS-M64-{i:05d}-of-00028.gguf", "shards": 28,
                 "tag": "atomic-", "mmproj_hf": hf("AtomicChat/Qwen3.8-Flash-Next-GGUF"),
                 "mmproj": "mmproj-Qwen3.8-Flash-Next-BF16.gguf", "name": "qwen3.8-flash-next-atomic",
                 "pack_args": ["--compat-bf16"]},
