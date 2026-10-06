@@ -214,6 +214,7 @@ inline bool block_geometry(uint32_t t, int& elems, int& bytes) {
         elems = 64;
         bytes = 18;
         return true;
+    case 39: elems = 32; bytes = 17; return true;
     default:
         return false;
     }

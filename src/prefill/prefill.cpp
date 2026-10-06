@@ -999,7 +999,8 @@ bool Prefill::carve(size_t T, void* alloc) {
         }
         if (base == nullptr) ok = false;
     }
-    for (int i = 0; i < DQ; ++i) { m.dq_gu[i] = o.take<uint16_t>(1280 * 2560, ok); m.dq_d[i] = o.take<uint16_t>(2560 * 640, ok); }
+    // [2*n_ff, n_embd] and [n_embd, n_ff] halves, as the FP16 fallback's GEMMs at the expert pass index them.
+    for (int i = 0; i < DQ; ++i) { m.dq_gu[i] = o.take<uint16_t>((size_t) 2 * g.n_ff * g.n_embd, ok); m.dq_d[i] = o.take<uint16_t>((size_t) g.n_embd * g.n_ff, ok); }
     if (mmq_plan().any) {
         const MmqPlan& mp = mmq_plan();
         m.ids_identity = o.take<int32_t>(T * K, ok);
@@ -1519,7 +1520,7 @@ uint64_t Prefill::bytes_needed_impl(const core::ModelGeometry& g, const core::Se
     const int64_t max_blocks = ss.qsa_states[ss.qsa_primary()].max_cells / s.idx_block + 2;
     o.take<uint8_t>((size_t) std::max({gdn_set_bytes(T), qsa_set_bytes(T, cap, max_blocks, 256, 32, s),
                                        moe_set_bytes(T, g.n_expert, fused_layout(T, true))}), ok);
-    for (int i = 0; i < DQ; ++i) { o.take<uint16_t>(1280 * 2560, ok); o.take<uint16_t>(2560 * 640, ok); }
+    for (int i = 0; i < DQ; ++i) { o.take<uint16_t>((size_t) 2 * g.n_ff * g.n_embd, ok); o.take<uint16_t>((size_t) g.n_embd * g.n_ff, ok); }
     if (mmq_plan().any) {
         const MmqPlan& mp = mmq_plan();
         o.take<int32_t>(T * K, ok);
