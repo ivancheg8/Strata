@@ -56,7 +56,12 @@ constexpr int THREADS = 512;
 constexpr int WLD = 80;                 // bytes per decoded weight row of a stage: 64 int8 + 16 (no bank conflicts)
 __host__ __device__ constexpr int tile_rows(int ww) { return 256 / ww; }
 __host__ __device__ constexpr int weight_rows(int ww) { return 64 * ww; }
-constexpr int ASTAGES = 4;              // cp.async depth of the activations (64 values of K a stage)
+// The cp.async depth of the activations (64 values of K a stage).  The ring is the kernel's largest shared-memory
+// item - tile_rows(2) * AB = 10 KiB a stage, 40 of the 64.5 KiB a ww=2 block needs for MXFP4's down rows, which is
+// one block per SM.  Two stages at ww=2 bring it to 44.5 KiB, room for two blocks on a 100 KiB SM - if the registers
+// allow it (two 512-thread blocks: 64 registers a thread), so STRATA_PF_INFO=1 prints what the driver's occupancy
+// query answers for this shape.  ww=4 keeps 4: its ring is 20 KiB of 69.9 KiB and its tiles read the stages deeper.
+__host__ __device__ constexpr int astages(int ww) { return ww == 2 ? 2 : 4; }
 constexpr int GU_ROWS_K = 2560, D_ROWS_K = 640;   // K of gate/up (n_embd) and of down (n_ff)
 
 // the formats (ggml type ids)
@@ -97,7 +102,7 @@ __host__ __device__ constexpr int grid_bytes(int t) {
          : t == T_IQ3_S ? 512 * 4 : 0;
 }
 __host__ __device__ constexpr size_t smem_bytes(int t, int ww) {
-    return (size_t) 2 * weight_rows(ww) * (WLD + 16) + (size_t) ASTAGES * tile_rows(ww) * AB +
+    return (size_t) 2 * weight_rows(ww) * (WLD + 16) + (size_t) astages(ww) * tile_rows(ww) * AB +
            (size_t) tile_rows(ww) * 4 + grid_bytes(t);
 }
 
@@ -462,7 +467,7 @@ __global__ void __launch_bounds__(THREADS, 1)
 native_kernel(const Batch b, const NativeGeom geo, const Tables tb, const uint8_t* __restrict__ act,
               const int32_t* __restrict__ src, uint8_t* __restrict__ out, float* __restrict__ dm) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
-    constexpr int TR = tile_rows(WW), WR = weight_rows(WW);
+    constexpr int TR = tile_rows(WW), WR = weight_rows(WW), AS = astages(WW);
     constexpr int WT_BYTES = WR * WLD, WS_FLOATS = WR * 4, ACT_STAGE = TR * AB;
     constexpr int NS = (GU ? GU_ROWS_K : D_ROWS_K) / 64;   // 64-value stages along K
     constexpr int NFB = (GU ? 1280 : 2560) / WR;          // weight-row blocks per tile
@@ -472,8 +477,8 @@ native_kernel(const Batch b, const NativeGeom geo, const Tables tb, const uint8_
     extern __shared__ __align__(16) uint8_t smem[];
     uint8_t* wt = smem;                                               // [2][WR][WLD] decoded int8 weights
     float* ws = (float*) (smem + 2 * WT_BYTES);                       // [2][WR][4] their scales per 16 values
-    uint8_t* stages = (uint8_t*) (ws + 2 * WS_FLOATS);                // [ASTAGES][TR][AB] activations
-    int* srow = (int*) (stages + ASTAGES * ACT_STAGE);                // [TR] the activation row of each tile row
+    uint8_t* stages = (uint8_t*) (ws + 2 * WS_FLOATS);                // [AS][TR][AB] activations
+    int* srow = (int*) (stages + AS * ACT_STAGE);                     // [TR] the activation row of each tile row
     uint8_t* sgrid = (uint8_t*) (srow + TR);                          // the codebook
 
     const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5, g = lane >> 2, tig = lane & 3;
@@ -534,7 +539,7 @@ native_kernel(const Batch b, const NativeGeom geo, const Tables tb, const uint8_
         // the rows past the item's end are not loaded: a warp entirely past it skips the products, and the columns
         // of a partial one are never written (no reduction mixes columns)
         auto load_act = [&](int s) {
-            uint8_t* st = stages + (s % ASTAGES) * ACT_STAGE;
+            uint8_t* st = stages + (s % AS) * ACT_STAGE;
             for (int c = tid; c < TR * 5; c += THREADS) {
                 const int r = c / 5, q = c % 5;
                 if (r < nrows) cp16(st + r * AB + q * 16, act + (size_t) srow[r] * ACT_LD + s * AB + q * 16);
@@ -551,7 +556,7 @@ native_kernel(const Batch b, const NativeGeom geo, const Tables tb, const uint8_
             *(float2*) (ws + buf * WS_FLOATS + ur * 4 + 2 * uj) = make_float2(s0, s1);
         };
 #pragma unroll
-        for (int s = 0; s < ASTAGES - 1; ++s) {
+        for (int s = 0; s < AS - 1; ++s) {
             if (s < NS) load_act(s);
             cp_commit();
         }
@@ -569,15 +574,15 @@ native_kernel(const Batch b, const NativeGeom geo, const Tables tb, const uint8_
 #pragma unroll
                 for (int q = 0; q < 4; ++q) acc[i][n][q] = 0.0f;
         for (int s = 0; s < NS; ++s) {
-            cp_wait<ASTAGES - 2>();
+            cp_wait<AS - 2>();
             __syncthreads();
-            if (s + ASTAGES - 1 < NS) load_act(s + ASTAGES - 1);
+            if (s + AS - 1 < NS) load_act(s + AS - 1);
             cp_commit();
             if (GU && (s & 3) == 0) prefetch_sb((s >> 2) + PF);
             if (on0) {
                 const uint8_t* W = wt + (s & 1) * WT_BYTES;
                 const float* S = ws + (s & 1) * WS_FLOATS;
-                const uint8_t* sa = stages + (s % ASTAGES) * ACT_STAGE;
+                const uint8_t* sa = stages + (s % AS) * ACT_STAGE;
                 // the stage's scales: per weight row 4 (per 16 values), per routed row 2 (per 32)
                 float2 dx[2][2];                                  // [n8 tile][column 2 tig + cc]
 #pragma unroll
@@ -951,6 +956,18 @@ template <int T, bool GU, int WW> bool setup_ww(int& occ) {
 template <int T, bool GU> bool setup_one(int& occ) { return setup_ww<T, GU, 4>(occ) && setup_ww<T, GU, 2>(occ); }
 #endif
 
+// STRATA_PF_INFO=1: report the shapes the driver's occupancy query gives this device - the numbers a shared-memory
+// change or a pick_ww threshold is judged on.  The path's blocks per SM is the min over every format the setup
+// queries, while a shape's own answer needs its registers and its shared bytes: 512-thread blocks, two of them a SM,
+// fit only at 64 registers a thread, so a smaller shared budget buys nothing while the registers are above that.
+bool info_on() {
+    static const bool on = [] {
+        const char* v = std::getenv("STRATA_PF_INFO");
+        return v != nullptr && v[0] == '1';
+    }();
+    return on;
+}
+
 #if defined(__HIPCC__)
 // Resident blocks per multiprocessor for the gfx11 WMMA prompt-expert kernels' persistent grids.  HIP counts a gfx11
 // WGP (two CUs, which these kernels use as one in the default WGP mode) as one multiprocessor, and the occupancy query
@@ -1004,6 +1021,16 @@ const DevInfo& dev_info() {
            setup_one<T_IQ3_XXS, true>(occ) && setup_one<T_IQ3_S, true>(occ) && setup_one<T_IQ4_XS, true>(occ) &&
            setup_one<T_Q2_0, false>(occ) && setup_one<T_IQ4_NL, false>(occ) && setup_one<T_MXFP4, false>(occ);
     d.occ = d.ok ? occ : 1;
+    if (d.ok && info_on()) {
+        cudaFuncAttributes fa{};
+        int o = 0;
+        if (cudaFuncGetAttributes(&fa, native_kernel<T_MXFP4, false, 2>) == cudaSuccess)
+            cudaOccupancyMaxActiveBlocksPerMultiprocessor(&o, native_kernel<T_MXFP4, false, 2>, THREADS,
+                                                          (int) smem_bytes(T_MXFP4, 2));
+        std::fprintf(stderr, "strata: fused experts (native): %d SMs, %d blocks a SM (the min over the formats); "
+                             "MXFP4 down ww=2: %d KiB shared, %d registers a thread, %d blocks a SM\n",
+                     d.sms, d.occ, (int) (smem_bytes(T_MXFP4, 2) / 1024), fa.numRegs, o);
+    }
     cudaGetLastError();
 #endif
     return d;
@@ -1047,7 +1074,14 @@ void launch(int ww, unsigned grid, const Batch& b, const NativeGeom& g, const Ta
 // a layer of 2048 / 3584 / 8192 tokens, ms, 64 -> 128): IQ2_S 5.2 -> 6.7, 9.5 -> 9.3, 17.5 -> 19.5; IQ2_XXS 4.2 ->
 // 5.8, 7.4 -> 7.6, 13.6 -> 16.5; IQ3_S 5.6 -> 6.6, 10.2 -> 8.8, 18.4 -> 19.0; IQ3_XXS 5.1 -> 6.3, 9.1 -> 8.3, 16.5 ->
 // 17.5 (256 rows was slower still).  STRATA_PF_FUSED_TILE=64|128 forces one.
-int pick_ww(int64_t n, int n_expert) {
+//
+// Those are gate/up shapes: the rule keys on the rows an expert gets, not on the formats, so a pair runs its gate/up's
+// rule, and AtomicChat's IQ2_S gate/up with MXFP4 down is inside the measured IQ2_S numbers.  Its own pair is not
+// measured and gets no thresholds of its own here - the down kernel is a quarter of gate/up's K (640 against 2560), so
+// its tiles sit in a different part of the same window, and a number for it would be a guess.  A measured pair adds its
+// line to this function with the ms of both shapes beside it; STRATA_PF_INFO=1 prints the shape each pair runs with,
+// its shared bytes and the driver's blocks per SM, which is what the measurement reads.
+int pick_ww(int64_t n, int n_expert, int gu_type, int d_type) {
     static const int forced = [] {
         const char* v = std::getenv("STRATA_PF_FUSED_TILE");
         const int t = v ? std::atoi(v) : 0;
@@ -1055,7 +1089,17 @@ int pick_ww(int64_t n, int n_expert) {
     }();
     if (forced) return forced;
     const double avg = (double) n / std::max(n_expert, 1);
-    return avg > 56.0 && avg <= 112.0 ? 2 : 4;
+    const int ww = avg > 56.0 && avg <= 112.0 ? 2 : 4;
+    if (info_on() && gu_type >= 0 && d_type >= 0 && gu_type < 64 && d_type < 64) {
+        static signed char said[64][64];   // one line per format pair: the launch shape, not every launch
+        if (!said[gu_type][d_type]) {
+            said[gu_type][d_type] = 1;
+            std::fprintf(stderr, "strata: fused experts (native): gu=%d d=%d, %d weight rows a tile, %.1f rows an "
+                                 "expert, %d/%d KiB shared\n", gu_type, d_type, weight_rows(ww), avg,
+                         (int) (smem_bytes(gu_type, ww) / 1024), (int) (smem_bytes(d_type, ww) / 1024));
+        }
+    }
+    return ww;
 }
 
 }  // namespace
@@ -1128,7 +1172,7 @@ void experts_native(const Batch& b, const NativeGeom& g, int n_expert, int64_t n
         return;
     }
 #endif
-    const int ww = pick_ww(n, n_expert);
+    const int ww = pick_ww(n, n_expert, g.gu_type, g.d_type);
     // the most 64-row tiles the batch can have (every row in it, plus a partial tile per expert) - the items of the
     // ones inside a larger item end at once
     const int64_t tiles = (n + kTileRows - 1) / kTileRows + (b.e1 - b.e0);
