@@ -67,6 +67,7 @@ HF_REVISIONS = {
     "ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF": "b22d729eae29b5796f76fb70f91aef549b9fc52c",   # 2026-09-24
     "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF": "5348543e0147355ac9cbcb031184a3546350988e",  # 2026-09-29
     "unsloth/Qwen3.8-Flash-Next-GGUF": "38bb39ee97821de2c9009abb7e93950eec396e66",                   # 2026-09-30
+    "AtomicChat/Qwen3.8-Flash-Next-GGUF": "142262902a46f7daed19c79d0771534c8106ad59",                # 2026-10-07
 }
 
 
@@ -151,6 +152,13 @@ MODELS = {
                   "download_gb": 93.7, "ram_gb": 48, "arena_gb": 59.5, "families": ("unsloth",), "budget": True,
                   "shards": 3, "file": "Qwen3.8-Flash-Next-{q}-0000{i}-of-00003.gguf", "engine": (0, 1, 38),
                   "vision": True},
+    # AtomicChat's own quantization of the original model, with its imatrix: 41.05 GB of experts (MXFP4 downs,
+    # IQ2_S gate and up), the 38.4 GB n-gram table alone in shard 2, the dense side Q8_0 - which is why its pack
+    # is built with --compat-bf16 (fam["pack_args"]).  84.9 GB of shards, 45.8 GB of it resident: the repository's
+    # measured numbers, read here from its 28 shard files and their tensor directories.
+    "IQ4_XS": {"about": "AtomicChat's 3.84 bpw build (MXFP4 experts); the 38 GB n-gram table is read from the SSD, "
+                        "", "download_gb": 80, "ram_gb": 48, "arena_gb": 41.05,
+               "families": ("atomic",)},
 }
 # The experimental Unsloth file's four shards at the pinned revision: name -> (bytes, sha256), checked after the
 # download (setup trusts no other model file by name and size alone either: check_shards reads their directories).
@@ -218,6 +226,17 @@ FAMILIES = {
                 "mmproj": "mmproj-Qwen3.8-Flash-Next-BF16.gguf", "name": "qwen3.8-flash-next-unsloth",
                 "vision": False, "pack_args": ["--compat-bf16"],
                 "sha256": {**UNSLOTH_SHARDS, **UNSLOTH_IQ4_XS_SHARDS}},
+    # AtomicChat's build of the original model, quantized with its own imatrix: one size, in its own folder of the
+    # repository, in 28 shards with the n-gram table alone in shard 2.  Its experts are MXFP4 with IQ2_S gate and up,
+    # its dense side Q8_0, so tools/iq_pack.py has to convert that to BF16 (--compat-bf16, the pack_args) or the
+    # engine refuses the pack; its vision encoder is the same file as the original's, shipped in this repository.
+    "atomic": {"title": "AtomicChat Qwen3.8-Flash-Next", "by": "AtomicChat quants",
+               "about": "IQ4_XS, Q4_K_M, Q5_K_M",
+                "hf": hf("AtomicChat/Qwen3.8-Flash-Next-GGUF") + "Qwen3.8-Flash-Next-AD-3.84bpw-IQ4_XS-M64/",
+                "file": "Qwen3.8-Flash-Next-AD-3.84bpw-IQ4_XS-M64-{i:05d}-of-00028.gguf", "shards": 28,
+                "tag": "atomic-", "mmproj_hf": hf("AtomicChat/Qwen3.8-Flash-Next-GGUF"),
+                "mmproj": "mmproj-Qwen3.8-Flash-Next-BF16.gguf", "name": "qwen3.8-flash-next-atomic",
+                "pack_args": ["--compat-bf16"]},
 }
 MMPROJ = "mmproj-Qwen3.8-Flash-Next-BF16.gguf"
 # EXPERIMENTAL, off by default (setup asks): a control vector shipped with the repository, see its README
@@ -1267,7 +1286,8 @@ def gguf_dir_shards(folder: Path, fam: dict, model: str) -> list[Path]:
 GGUF_QUANT = re.compile(r"(?<![A-Za-z0-9])((?:UD-)?(?:I?Q\d+(?:_[A-Za-z0-9]+)*|BF16|F16|F32))"
                         r"(?=-\d{5}-of-\d{5}\.gguf$|\.gguf$)", re.I)
 SUPPORTED_GGUFS = ("Strata runs ISTA-DASLab's GSQ-RCO files (Qwen3.8-Flash-Next Q2_0, IQ2_XS, IQ3_XXS, IQ3_S; Swift "
-                   "1.5's; the Coder's IQ1_M) and Unsloth's UD-Q4_K_XL and UD-IQ4_XS only: other GGUFs (Unsloth's "
+                   "1.5's; the Coder's IQ1_M), Unsloth's UD-Q4_K_XL and UD-IQ4_XS and AtomicChat's "
+                   "AD-3.84bpw-IQ4_XS-M64 only: other GGUFs (Unsloth's "
                    "UD-IQ3_XXS or "
                    "UD-Q2_K_XL, K-quants) cannot be used")
 

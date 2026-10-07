@@ -66,6 +66,9 @@ FALLBACK_MODELS = {
                            "less than ~80 GB of RAM part of its experts are read from the SSD",
                   "download_gb": 93.7, "ram_gb": 48, "arena_gb": 59.5, "families": ("unsloth",), "budget": True,
                   "vision": True},
+    "IQ4_XS": {"about": "AtomicChat's 3.84 bpw build (MXFP4 experts); the 38 GB n-gram table is read from the SSD, "
+                        "its pack needs --compat-bf16", "download_gb": 84.9, "ram_gb": 48, "arena_gb": 41.05,
+               "families": ("atomic",)},
 }
 FALLBACK_FAMILIES = {
     "qwen": {"title": "Qwen3.8-Flash-Next", "about": "the original model", "tag": ""},
@@ -77,6 +80,7 @@ FALLBACK_FAMILIES = {
                                                                   "of RAM part of its experts are read from the SSD "
                                                                   "(UD-Q4_K_XL, 111 GB: experimental)",
                 "tag": "unsloth-", "vision": False},
+    "atomic": {"title": "AtomicChat IQ4_XS", "about": "requires --compat-bf16 packing", "tag": "atomic-"},
 }
 FALLBACK_CONTEXTS = [8192, 32768, 65536, 131072, 204800, 262144, 393216, 524288]
 BENCH_PROMPT = ("Write a short story (about 300 words) about a lighthouse keeper who finds a message in a bottle. "
