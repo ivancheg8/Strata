@@ -1,6 +1,26 @@
 <h1>Added support for Qwen3.8-Flash-Next-AD-3.84bpw-IQ4_XS-M64.</h1>
 https://huggingface.co/AtomicChat/Qwen3.8-Flash-Next-GGUF
 
+---
+### Speed ​​test. Context 204800.
+
+AtomicChat/Qwen3.8-Flash-Next-AD-3.84bpw-IQ4_XS-M64
+| Target  | Prefill (t/s) | Decode (t/s) |
+| --- | ---: | ---: |
+| 194560 | 1362.5 | 51.1 |
+
+ukisai/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS
+| Target  | Prefill (t/s) | Decode (t/s) |
+| --- | ---: | ---: |
+| 194560 | 2336.1 | 62.1 |
+
+---
+Hardware:
+| CPU | RAM | GPU | VRAM |
+| --- | ---: | ---: | ---: |
+| AMD Ryzen 7 5700X | 64 GB | RTX 5070 | 12 GB |
+
+---
 <h1 align="center">Strata</h1>
 
 **English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt-BR.md)
