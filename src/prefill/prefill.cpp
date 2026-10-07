@@ -2523,8 +2523,8 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                     if (fused_l) {
                         if (static bool said = false; !said) {
                             said = true;
-                            std::fprintf(stderr, "strata: prompt experts on the fused int8 kernels (STRATA_PF_FUSED=1, "
-                                                 "#136)\n");
+                            std::fprintf(stderr, "strata: prompt experts on the fused int8 kernels (#136; "
+                                                 "STRATA_PF_FUSED=0 keeps MMQ)\n");
                         }
                         pt.mark(kPfGather, cs);
                         // the layer's input to int8 once per token; the rows of each expert from the router's ids

@@ -651,7 +651,7 @@ bool built() { return true; }
 bool available() { return dev_info().cc >= 80; }
 // 0.1.36: on by default for the Q2_0 pack (+13-23% prompts on an RTX 5070; teacher-forced against the FP16 path as
 // close as MMQ at 8K and closer at 32K: phaseA-tests s18-tf); STRATA_PF_FUSED=0 keeps MMQ.  The native packs' kernels
-// (moe_fused_iq) stay opt-in: STRATA_PF_FUSED=1 (requested()).
+// (moe_fused_iq) read the same switch: their covered format pairs run on them with no variable set.
 bool enabled() {
     static const bool env = [] {
         const char* v = std::getenv("STRATA_PF_FUSED");

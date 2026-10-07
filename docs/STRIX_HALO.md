@@ -103,7 +103,7 @@ the short prompts on the default numerics, since these pay on long ones). The ma
 them:
 
 ```sh
-export STRATA_PF_FUSED=1        # the prompt experts on the matrix cores (IQ2 / IQ3 / IQ4_XS gate/up, Q2_0 / IQ4_NL / Q8_0 down)
+export STRATA_PF_FUSED=1        # the prompt experts on the matrix cores (IQ2 / IQ3 / IQ4_XS gate/up, Q2_0 / IQ4_NL / Q8_0 / MXFP4 down)
 export STRATA_PF_GEMM=1         # the prompt's FP16 projections on the 128 x 256 WMMA GEMM
 export STRATA_HC_UPMIX=1        # the hyper-connection up projection with its epilogue
 export STRATA_PA_FAST=1         # the prompt attention with single FP16 q and p
