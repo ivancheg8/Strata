@@ -24,8 +24,10 @@ measured with Swift 1.5's IQ2_XS, which runs at the original's speed.
 previous kernels (closer at 32K: teacher-forced KL 0.009 vs 0.012). The decode path's block selection and greedy
 argmax run on thread-block clusters (RTX 50, sm_90+; other cards keep the previous kernels; the same tokens): Q2_0 output at 4K 89 -> 93.5, at 128K
 64.5 -> 76.4 tokens/s. `STRATA_PF_FUSED=0` keeps the previous prompt kernels (byte-identical answers to 0.1.35);
-`STRATA_PF_FUSED=1` also runs the native IQ packs' fused kernels (opt-in: IQ2_XS prompts +12% at 4K, +3% at 32K, the
-IQ3 packs about even); `STRATA_QSA_CLUSTER=0` / `STRATA_ARGMAX_MULTI=0` turn the decode kernels off. The tables
+`STRATA_PF_FUSED=1` runs the native IQ packs' fused kernels too (IQ2_XS prompts +12% at 4K, +3% at 32K, the
+IQ3 packs about even) - on NVIDIA sm_80+ those run with nothing set on a pack whose gate/up and down formats they
+cover, where `STRATA_PF_FUSED_NATIVE=0` keeps MMQ; on gfx11 they need `STRATA_PF_FUSED=1`;
+`STRATA_QSA_CLUSTER=0` / `STRATA_ARGMAX_MULTI=0` turn the decode kernels off. The tables
 below are 0.1.26's.
 
 ### Prompt processing (tokens/s)
