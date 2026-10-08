@@ -1,5 +1,7 @@
 <h1>Added support for Qwen3.8-Flash-Next-AD-3.84bpw-IQ4_XS-M64.</h1>
-https://huggingface.co/AtomicChat/Qwen3.8-Flash-Next-GGUF
+Model: https://huggingface.co/AtomicChat/Qwen3.8-Flash-Next-GGUF
+
+Technical report: [MXFP4 Support in Strata for AtomicChat Qwen3.8-Flash-Next](<./docs/Technical Report MXFP4 Support in Strata for AtomicChat Qwen3.8-Flash-Next.md>)
 
 ---
 ### Speed ​​test. Context 204800.
