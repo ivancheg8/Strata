@@ -1251,7 +1251,7 @@ __global__ void __launch_bounds__(256) native_gu_multi_kernel(const unsigned lon
     const uint32_t* s_grid = stage_iq_grid<TG, STAGE_GRID>(s_grid_buf, threadIdx.x, 256);
     const int nb = (int) (L.n_embd / Fmt<TG>::qk), xb = (int) (L.n_embd / 32);
     if constexpr (SUB16) {
-        if (xb == 80) {
+        if (nb * Fmt<TG>::ipb == 80) {   // row_dot_80_sub16's K: the 256-value formats at n_embd 2560
             const int subwarp = threadIdx.x >> 4, t = threadIdx.x & 15;
             const int row = blockIdx.x * 16 + subwarp;            // 0 .. 2*n_ff
             if (row >= 2 * L.n_ff) return;
@@ -1933,6 +1933,14 @@ int gu_qk(int t) {
 #define STRATA_QK(T) case T: return Fmt<T>::qk;
         STRATA_GU_FMTS(STRATA_QK)
 #undef STRATA_QK
+        default: return 0;
+    }
+}
+int gu_ipb(int t) {   // dot calls per block of the gate/up formats (a row is K = blocks * ipb long)
+    switch (t) {
+#define STRATA_IPB(T) case T: return Fmt<T>::ipb;
+        STRATA_GU_FMTS(STRATA_IPB)
+#undef STRATA_IPB
         default: return 0;
     }
 }
@@ -3498,7 +3506,8 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
     }
     const bool v1 = g_grouped_v1;
     const int64_t gy = (v1 || grid_groups <= 0 || grid_groups > cap_groups) ? cap_groups : grid_groups;
-    const int gu_rows = (!g_old_kernels && !g_no_sub16_gu && L.n_embd == 2560 && gu_split(L.gu_type)) ? 16 : GU_ROWS;
+    const int gu_rows = (!g_old_kernels && !g_no_sub16_gu && gu_split(L.gu_type) &&
+                         (L.n_embd / gu_qk(L.gu_type)) * gu_ipb(L.gu_type) == 80) ? 16 : GU_ROWS;
     const dim3 ggu((unsigned) ((2 * L.n_ff + gu_rows - 1) / gu_rows), (unsigned) gy);
 #if STRATA_EXP_LAYOUTS
 #if defined(STRATA_HIP_GFX906)
