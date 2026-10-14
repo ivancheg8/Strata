@@ -144,6 +144,24 @@ speed bound and NVIDIA/AMD/Intel details: [QUANTS.md](QUANTS.md); the files: [UD
 START-HERE.bat --setup --family unsloth --model UD-Q5_K_XL
 ```
 
+### AtomicChat AD-3.84bpw-IQ4_XS-M64
+
+**[AtomicChat's build of the original model](https://huggingface.co/AtomicChat/Qwen3.8-Flash-Next-GGUF)**, quantized
+with AtomicChat's own imatrix: **3.84 bits a weight**, its experts' down matrices in **MXFP4** (ggml type 39) and its
+gate and up matrices in IQ2_S, its dense side Q8_0. One size, in its own folder of the repository, in 28 shard files
+with the 38.4 GB n-gram table alone in shard 2: an **84.9 GB** download, **41.05 GB** of experts, 45.8 GB of it
+resident, so **48 GB of RAM**. Setup packs it with `--compat-bf16` (the dense Q8_0 stored as BF16), which the engine
+needs for its dense residents.
+
+On an RTX 5070 (12 GB), a Ryzen 7 5700X and 64 GB of RAM, measured on an earlier MXFP4 build, not on this one:
+50 tokens/s of answers and 1,390 tokens/s of a long prompt, against 62 and 2,336 for Swift 1.5's IQ3_XXS on the
+same PC. Most of the gap is the 38 GB table and the experts streamed from RAM, not the MXFP4 math: the fused int8
+expert path covers this pack. Format details, the CPU rows, the MMQ path and the tests: **[MXFP4.md](MXFP4.md)**.
+
+```
+START-HERE.bat --setup --family atomic --model IQ4_XS
+```
+
 ### OrcaRouter Uncensored IQ3_XXS
 
 For **OrcaRouter's Flash-Next Uncensored IQ3_XXS**, see the [manual compatibility setup](ORCA.md). It needs an

@@ -35,6 +35,9 @@ struct NativeFmt {
 };
 constexpr int kNvfp4Type = 40;
 constexpr size_t kNvfp4Tail = 16;
+/// MXFP4 (ggml type 39): the E8M0 byte inside every block is that block's only scale, so a MXFP4 blob has no tail and
+/// none of the paths below reads one (contrast the tail_off above).
+constexpr int kMxfp4Type = 39;
 
 /// Whether this build has the ggml-cpu path.
 bool native_experts_available() noexcept;

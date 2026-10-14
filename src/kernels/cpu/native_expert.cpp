@@ -7,6 +7,8 @@
 #include "strata/kernels/cpu/iq_avx2.hpp"
 #include "strata/kernels/cpu/iq_avx1.hpp"
 #include "strata/kernels/cpu/kq_avx2.hpp"
+#include "strata/kernels/cpu/mxfp4_avx2.hpp"
+#include "strata/kernels/cpu/mxfp4_avx512.hpp"
 #include "strata/kernels/cpu/nvfp4_avx2.hpp"
 #include "strata/kernels/cpu/nvfp4_avx512.hpp"
 #include "strata/kernels/cpu/expert_layout.hpp"
@@ -215,6 +217,18 @@ void native_gu_rows(const NativeFmt& f, const uint8_t* blob, const void* const* 
         nvfp4_256_gu_rows(blob, f.gu_row, f.up_off, n, act, nt, ff, r0, r1, sg, su);
         return;
     }
+    // MXFP4: the same rows with the block's E8M0 as the only scale, so no tail is read and no sg/su is passed
+    // (native_fmt gives a MXFP4 blob no tail).  STRATA_NO_MXFP4_512 / _256 fall back to ggml-cpu's dot below.
+    static const bool mxfp4_512 = cpu_avx512_ok() && std::getenv("STRATA_NO_MXFP4_512") == nullptr;
+    if (f.gu_type == kMxfp4Type && mxfp4_512 && mxfp4_512_fits(n)) {
+        mxfp4_512_gu_rows(blob, f.gu_row, f.up_off, n, act, nt, ff, r0, r1);
+        return;
+    }
+    static const bool mxfp4_256 = cpu_avx2_ok() && std::getenv("STRATA_NO_MXFP4_256") == nullptr;
+    if (f.gu_type == kMxfp4Type && mxfp4_256 && mxfp4_256_fits(n)) {
+        mxfp4_256_gu_rows(blob, f.gu_row, f.up_off, n, act, nt, ff, r0, r1);
+        return;
+    }
     const ggml_vec_dot_t dot = traits(f.gu_type)->vec_dot;
     for (int r = r0; r < r1; ++r) {
         const uint8_t* gr = blob + (size_t) r * f.gu_row;
@@ -265,6 +279,17 @@ void native_down_rows(const NativeFmt& f, const uint8_t* blob, const void* const
     static const bool nvfp4_256 = cpu_avx2_ok() && std::getenv("STRATA_NO_NVFP4_256") == nullptr;   // see above
     if (f.d_type == kNvfp4Type && nvfp4_256 && nvfp4_256_fits(n)) {
         nvfp4_256_rows(blob + f.down_off, f.d_row, n, hq, nt, out, r0, r1, sd);
+        return;
+    }
+    // MXFP4 down rows: the block's E8M0 is the whole scale, so these take no sd (see native_gu_rows)
+    static const bool mxfp4_512 = cpu_avx512_ok() && std::getenv("STRATA_NO_MXFP4_512") == nullptr;
+    if (f.d_type == kMxfp4Type && mxfp4_512 && mxfp4_512_fits(n)) {
+        mxfp4_512_rows(blob + f.down_off, f.d_row, n, hq, nt, out, r0, r1);
+        return;
+    }
+    static const bool mxfp4_256 = cpu_avx2_ok() && std::getenv("STRATA_NO_MXFP4_256") == nullptr;   // see above
+    if (f.d_type == kMxfp4Type && mxfp4_256 && mxfp4_256_fits(n)) {
+        mxfp4_256_rows(blob + f.down_off, f.d_row, n, hq, nt, out, r0, r1);
         return;
     }
     const ggml_vec_dot_t dot = traits(f.d_type)->vec_dot;

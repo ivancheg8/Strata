@@ -32,6 +32,7 @@ __device__ __forceinline__ void put(H16* o, int i, float v) { o[i].v = __half_as
 __device__ __forceinline__ void put(float* o, int i, float v) { o[i] = v; }
 
 __constant__ int8_t kv_iq4nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+__constant__ int8_t kv_mxfp4[16] = {0, 2, 4, 6, 8, 12, 16, 24, 0, -2, -4, -6, -8, -12, -16, -24};
 
 __device__ __forceinline__ void scale_min_k4(int j, const uint8_t* q, int& d, int& m) {
     if (j < 4) { d = q[j] & 63; m = q[j + 4] & 63; }
@@ -89,6 +90,13 @@ __device__ __forceinline__ void group32(const uint8_t* row_blocks, int gi_in_row
         for (int j = 0; j < 16; ++j) {
             put(out, j, d * (float) kv_iq4nl[b[2 + j] & 0xf]);
             put(out, j + 16, d * (float) kv_iq4nl[b[2 + j] >> 4]);
+        }
+    } else if constexpr (TYPE == 39) {                             // MXFP4: e (E8M0) qs[16], 17 B per 32 values
+        const uint8_t* b = row_blocks + (size_t) gi_in_row * 17;
+        const float d = exp2f((float) ((int) b[0] - 128));         // ggml's GGML_E8M0_TO_FP32_HALF
+        for (int j = 0; j < 16; ++j) {
+            put(out, j, d * (float) kv_mxfp4[b[1 + j] & 0xf]);
+            put(out, j + 16, d * (float) kv_mxfp4[b[1 + j] >> 4]);
         }
     } else if constexpr (TYPE == 11) {                             // Q3_K: hmask[32] qs[64] scales[12] d
         const uint8_t* b = row_blocks + (size_t) (gi_in_row / 8) * 110;

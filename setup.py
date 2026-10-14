@@ -69,6 +69,7 @@ HF_REVISIONS = {
     "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF": "5348543e0147355ac9cbcb031184a3546350988e",  # 2026-09-29
     "unsloth/Qwen3.8-Flash-Next-GGUF": "38bb39ee97821de2c9009abb7e93950eec396e66",                   # 2026-09-30
     "unsloth/Qwen3.6-35B-A3B-MTP-GGUF": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",                  # 2026-10-12
+    "AtomicChat/Qwen3.8-Flash-Next-GGUF": "142262902a46f7daed19c79d0771534c8106ad59",                # 2026-10-07
 }
 
 
@@ -289,6 +290,13 @@ MODELS = {
              "download_gb": 188.2, "ram_gb": 136, "arena_gb": 128.3, "families": ("unsloth",), "budget": True,
              "shards": 6, "file": "Qwen3.8-Flash-Next-{q}-0000{i}-of-00006.gguf", "engine": (0, 1, 38),
              "vision": True},
+    # AtomicChat's own quantization of the original model, with its imatrix: 41.05 GB of experts (MXFP4 downs,
+    # IQ2_S gate and up), the 38.4 GB n-gram table alone in shard 2, the dense side Q8_0 - which is why its pack
+    # is built with --compat-bf16 (fam["pack_args"]).  84.9 GB of shards, 45.8 GB of it resident: the repository's
+    # measured numbers, read here from its 28 shard files and their tensor directories.
+    "IQ4_XS": {"about": "AtomicChat's 3.84 bpw build (MXFP4 experts); the 38 GB n-gram table is read from the SSD, "
+                        "its pack needs --compat-bf16", "download_gb": 84.9, "ram_gb": 48, "arena_gb": 41.05,
+               "families": ("atomic",)},
     # MODEL-UPDATE Phase 4: NVFP4 experts, ready-made packs (NVFP4_REPOS).  63.3 GiB (68.0 GB) of experts in the
     # pack's experts.bin; the low-RAM mode reads them from there on a PC whose RAM does not hold them.  NVIDIA only
     # (the HIP and SYCL engines have no NVFP4 kernels).  Images: both packs keep Qwen's vision tower unquantized, so the
@@ -421,6 +429,17 @@ FAMILIES = {
               "tag": "nvfp4-", "name": "qwen3.8-flash-next-nvfp4", "ready": True,
               "mmproj_hf": hf("ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF"), "mmproj": "mmproj-Qwen3.8-Flash-Next-BF16.gguf",
               "mmproj_sha256": (907543008, "b1a82259702816a5330d7bd7607cd9676b11780e79ff7348c21103ff3ce49bd0")},
+    # AtomicChat's build of the original model, quantized with its own imatrix: one size, in its own folder of the
+    # repository, in 28 shards with the n-gram table alone in shard 2.  Its experts are MXFP4 with IQ2_S gate and up,
+    # its dense side Q8_0, so tools/iq_pack.py has to convert that to BF16 (--compat-bf16, the pack_args) or the
+    # engine refuses the pack; its vision encoder is the same file as the original's, shipped in this repository.
+    "atomic": {"title": "AtomicChat IQ4_XS", "by": "Custom 3.84bpw",
+               "about": "requires --compat-bf16 packing",
+               "hf": hf("AtomicChat/Qwen3.8-Flash-Next-GGUF") + "Qwen3.8-Flash-Next-AD-3.84bpw-IQ4_XS-M64/",
+               "file": "Qwen3.8-Flash-Next-AD-3.84bpw-IQ4_XS-M64-{i:05d}-of-00028.gguf", "shards": 28,
+               "tag": "atomic-", "mmproj_hf": hf("AtomicChat/Qwen3.8-Flash-Next-GGUF"),
+               "mmproj": "mmproj-Qwen3.8-Flash-Next-BF16.gguf", "name": "qwen3.8-flash-next-atomic",
+               "pack_args": ["--compat-bf16"]},
 }
 MMPROJ = "mmproj-Qwen3.8-Flash-Next-BF16.gguf"
 # Qwen3.6-35B-A3B (GGUF architecture qwen35moe), Unsloth's GGUFs with the MTP block: a family with an engine path of its
@@ -1737,8 +1756,9 @@ def gguf_dir_shards(folder: Path, fam: dict, model: str) -> list[Path]:
 GGUF_QUANT = re.compile(r"(?<![A-Za-z0-9])((?:UD-)?(?:I?Q\d+(?:_[A-Za-z0-9]+)*|BF16|F16|F32))"
                         r"(?=-\d{5}-of-\d{5}\.gguf$|\.gguf$)", re.I)
 SUPPORTED_GGUFS = ("Strata runs ISTA-DASLab's GSQ-RCO files (Qwen3.8-Flash-Next Q2_0, IQ2_XS, IQ3_XXS, IQ3_S; Swift "
-                   "1.5's; the Coder's IQ1_M) and Unsloth's UD-IQ4_XS, UD-Q4_K_XL, UD-Q5_K_XL, UD-Q6_K_XL and Q8_0 "
-                   "only: other GGUFs (Unsloth's UD-IQ3_XXS or UD-Q2_K_XL, other K-quant files) cannot be used")
+                   "1.5's; the Coder's IQ1_M), Unsloth's UD-IQ4_XS, UD-Q4_K_XL, UD-Q5_K_XL, UD-Q6_K_XL and Q8_0 and "
+                   "AtomicChat's AD-3.84bpw-IQ4_XS-M64 only: other GGUFs (Unsloth's UD-IQ3_XXS or UD-Q2_K_XL, "
+                   "other K-quant files) cannot be used")
 
 
 def gguf_unsupported(name: str) -> str | None:

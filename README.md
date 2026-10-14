@@ -144,6 +144,9 @@ sizes are faster. Larger sizes are a bit smarter.
   answers, which is much slower (7-8.5 tokens/s for UD-Q4_K_XL on a 64 GB PC).
 - **[OrcaRouter's Uncensored IQ3_XXS](docs/MODELS.md#orcarouter-uncensored-iq3_xxs):** you set it up by hand. It is
   not in the installer's menu.
+- **[AtomicChat's AD-3.84bpw-IQ4_XS-M64](docs/MXFP4.md):** [AtomicChat's own build](https://huggingface.co/AtomicChat/Qwen3.8-Flash-Next-GGUF)
+  of the model, quantized with its own imatrix: 3.84 bits a weight, its experts' down matrices in **MXFP4** and its
+  gate and up in IQ2_S. A 84.9 GB download in 28 shards, 48 GB of RAM, packed with `--compat-bf16`.
 
 Sizes, downloads and what fits where: [docs/MODELS.md](docs/MODELS.md). To add another model later, run
 `SETUP.bat` (Linux: `./setup.sh --setup`).

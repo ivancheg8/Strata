@@ -182,6 +182,9 @@ bool w4a4_available();
 void run_nvfp4_w4a4(ggml_backend_cuda_context& ctx, const mmq_args& a, cudaStream_t s);
 void quantize_nvfp4_w4a4(const float* x, const int32_t* ids, void* xq, float* yscale, bool aligned, int64_t cols,
                          int64_t ld, int64_t rows, int64_t padded, cudaStream_t s);
+// mmq_mxfp4_w4a8.cu: mmq.cuh's int8 MXFP4 path, with Blackwell's .kind::mxf4 MMA hidden the same way (ptxas takes
+// that instruction only in the sm_100a / 101a / 103a images, so ggml's own MXFP4 instance does not build for sm_120)
+void run_mxfp4_w4a8(ggml_backend_cuda_context& ctx, const mmq_args& a, cudaStream_t s);
 
 bool built() { return true; }
 
@@ -215,6 +218,8 @@ bool supported(int t) {
 #if !defined(GGML_USE_HIP)
         case GGML_TYPE_NVFP4:
             return nvfp4_mode() != Nvfp4Mode::FP16;
+        case GGML_TYPE_MXFP4:   // AtomicChat's IQ4_XS experts' down; mmq_mxfp4_w4a8.cu, the int8 path only
+            return true;
 #endif
         default:
             return false;
@@ -374,6 +379,9 @@ void Context::run(const Product& p, void* stream) {
         case GGML_TYPE_NVFP4:
             if (fp4_activations(t)) run_nvfp4_w4a4(ctx, a, s);
             else run_nvfp4_w4a8(ctx, a, s);
+            break;
+        case GGML_TYPE_MXFP4:
+            run_mxfp4_w4a8(ctx, a, s);
             break;
 #endif
         default:
