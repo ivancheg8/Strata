@@ -58,7 +58,10 @@ build-vision-cuda12.bat
 .vscode/
 .idea/
 .cursor/
-.qwen/
 
 /.ccache/
 /.rocm-win/
+
+# local session state, and the unpacked upstream release drop this branch was rebased on
+/.qwen/
+/Strata-0.1.44.1/
